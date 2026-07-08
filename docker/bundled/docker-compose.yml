@@ -20,6 +20,11 @@ services:
       CBS_LOG_LEVEL: ${CBS_LOG_LEVEL:-INFO}
       CBS_BUILD_TIMEOUT_SEC: ${CBS_BUILD_TIMEOUT_SEC:-900}
       CBS_REMOTES_RELOAD_TOKEN: ${CBS_REMOTES_RELOAD_TOKEN:-}
+      # Concurrent SITL autotest slots. Lockstep makes tests deterministic
+      # and load-independent, so we oversubscribe the 24 cores heavily; the
+      # autotest server auto-widens the per-slot port spacing above 24 slots
+      # (SITL_PORT_STRIDE_MULT) to stay collision-free.
+      MAX_SITL_INSTANCES: ${MAX_SITL_INSTANCES:-250}
     volumes:
       # Git-heavy volumes: native Docker volumes (btrfs/ext4 on vDisk, NOT shfs)
       - autotest-workdir:/data/autotest-workdir:rw
