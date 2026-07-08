@@ -46,27 +46,20 @@ _template_locks: dict[str, asyncio.Lock] = {}
 _build_cache_guard = asyncio.Lock()  # protects build_cache dict only
 _build_key_locks: dict[str, asyncio.Lock] = {}
 
-# SITL instance pool. Each slot k gets unique ports via SITL -I; determinism
-# comes from removing wall-clock dependencies (SIM_DETERMINISTIC=1,
-# SIM_RNG_SEED=42, PYTHONHASHSEED=0, per-test random.seed, lockstep ticks),
-# NOT from CPU headroom — so we can heavily oversubscribe cores. Configurable:
-#   MAX_SITL_INSTANCES        how many tests run concurrently (default 16)
-#   SITL_PORT_STRIDE_MULT     per-slot port spacing multiplier (see below)
+# SITL instance pool. Each slot gets unique ports via SITL -I slot (offsets
+# all of SITL's ports by slot*10). Determinism comes from removing wall-clock
+# dependencies (SIM_DETERMINISTIC=1, SIM_RNG_SEED=42, PYTHONHASHSEED=0,
+# per-test random.seed, lockstep ticks), NOT from CPU headroom — so we can
+# heavily oversubscribe the cores. MAX_SITL_INSTANCES is env-configurable.
 #
-# SITL -I M offsets ALL of SITL's ports by M*10. The framework's per-slot
-# ports (rcin 5501, mavlink 5760.., lockstep 5790/5791, spare 8000) also add
-# M*10. With the naive stride of 10 per slot, two UDP bases that are congruent
-# mod 10 collide once slots are far enough apart: rcin (5501) and the Python
-# lockstep bind (5791) differ by 290, so slot k's 5791 == slot (k+29)'s 5501 —
-# EADDRINUSE at >=30 concurrent slots. To scale past that we widen the spacing:
-# SITL is launched with -I (slot * STRIDE_MULT), so the effective port spacing
-# is STRIDE_MULT*10. STRIDE_MULT=10 (spacing 100) makes all known bases
-# distinct mod 100, collision-free to ~250 slots (max port ~34k < 65535).
+# Scaling limit: SITL's -I instance is a uint8, so slot must stay <= 255.
+# Within that, the framework used to collide: the Python lockstep socket
+# bound a fixed 5791+slot*10 which is congruent mod 10 with SITL's rcin bind
+# 5501+slot*10 (differ by 290) -> EADDRINUSE at >=30 concurrent slots. That
+# was fixed on the framework side by binding the Python lockstep socket to an
+# ephemeral port (SITL acks to the from-address), so slot*10 stride is
+# collision-free up to the 255 -I cap.
 MAX_SITL_INSTANCES = int(os.environ.get("MAX_SITL_INSTANCES", "16"))
-# Default to wide spacing automatically once we exceed the naive-stride
-# collision threshold; overridable via env.
-SITL_PORT_STRIDE_MULT = int(os.environ.get(
-    "SITL_PORT_STRIDE_MULT", "10" if MAX_SITL_INSTANCES > 24 else "1"))
 sitl_instance_pool = asyncio.Queue()
 for _i in range(MAX_SITL_INSTANCES):
     sitl_instance_pool.put_nowait(_i)
@@ -968,22 +961,19 @@ async def run_test_async(test_id: str, vehicle: str, test_target: str,
         instance_num = await sitl_instance_pool.get()
         try:
             _set_state(test_info, "TESTING")
-            test_info["log"] += f"=== SITL slot {instance_num} -> id {instance_num * SITL_PORT_STRIDE_MULT} (ports {5760 + instance_num * SITL_PORT_STRIDE_MULT * 10}+) ===\n"
+            test_info["log"] += f"=== SITL instance {instance_num} (ports {5760 + instance_num*10}+) ===\n"
             test_info["log"] += f"=== Running: {test_target} ===\n"
             test_info["log"] += f"=== BUILDLOGS: {test_buildlogs} ===\n"
             test_info["log"] += "=" * 60 + "\n"
             await flush_log(test_info)
 
             # Port isolation for concurrent SITL instances.
-            # SITL -I M offsets ALL ports by M*10: base_port, serial ports,
-            # RC input, etc. We use M = slot * SITL_PORT_STRIDE_MULT so the
-            # effective per-slot port spacing is STRIDE_MULT*10 (see the pool
-            # comment above), and patch the autotest framework to the same
-            # offset. sitl_id is also the SIM_LOCKSTEP_INSTANCE below.
-            sitl_id = instance_num * SITL_PORT_STRIDE_MULT
-            port_offset = sitl_id * 10
+            # SITL -I N offsets ALL ports by N*10: base_port, serial ports,
+            # RC input, etc. We must also patch the autotest framework so
+            # it connects to the same offset ports.
+            port_offset = instance_num * 10
 
-            # 1. Shim SITL binaries to inject -I <sitl_id>
+            # 1. Shim SITL binaries to inject -I <instance>
             bin_dir = wt_path / "build" / "sitl" / "bin"
             if bin_dir.exists():
                 for binary in bin_dir.iterdir():
@@ -992,7 +982,7 @@ async def run_test_async(test_id: str, vehicle: str, test_target: str,
                         if not real.exists():
                             binary.rename(real)
                             binary.write_text(
-                                f"#!/bin/bash\nexec {real} -I {sitl_id} \"$@\"\n",
+                                f"#!/bin/bash\nexec {real} -I {instance_num} \"$@\"\n",
                                 encoding="utf-8",
                             )
                             binary.chmod(0o755)
@@ -1060,7 +1050,7 @@ async def run_test_async(test_id: str, vehicle: str, test_target: str,
             # SIM_LOCKSTEP_INSTANCE selects the per-test UDP port
             # (5790 + instance*10) so concurrent tests don't collide.
             run_env["SIM_LOCKSTEP"] = "1"
-            run_env["SIM_LOCKSTEP_INSTANCE"] = str(sitl_id)
+            run_env["SIM_LOCKSTEP_INSTANCE"] = str(instance_num)
 
             # --speedup 100: belt-and-suspenders for branches without
             # the SIM_DETERMINISTIC patch.  High enough that SITL never
