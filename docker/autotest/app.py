@@ -622,12 +622,48 @@ def cleanup_test_copy(test_id: str):
 
 # --- Build cache ---
 
+# Test-suite and alias vehicles build another vehicle's binary — map them to
+# the vehicle whose waf build command actually exists. Justified by the
+# ArduPilot tree's Tools/autotest/autotest.py __bin_names table (QuadPlane and
+# PlaneTests* -> arduplane, CopterTests* -> arducopter, Helicopter ->
+# arducopter-heli, BalanceBot/Sailboat -> ardurover, Tracker -> antennatracker)
+# and the wscript vehicle build commands (antennatracker, blimp, copter, heli,
+# plane, rover, sub). Plain vehicles are deliberately absent: build_target()
+# must be identity for them so existing cache keys (which embed the vehicle
+# string) keep hitting. Unknown names fall through unchanged.
+_VEHICLE_BUILD_TARGETS = {
+    "QuadPlane": "Plane",
+    "PlaneTests1a": "Plane",
+    "PlaneTests1b": "Plane",
+    "PlaneTests1c": "Plane",
+    "CopterTests1a": "Copter",
+    "CopterTests1b": "Copter",
+    "CopterTests1c": "Copter",
+    "CopterTests1d": "Copter",
+    "CopterTests1e": "Copter",
+    "CopterTests2a": "Copter",
+    "CopterTests2b": "Copter",
+    "Helicopter": "Heli",
+    "BalanceBot": "Rover",
+    "Sailboat": "Rover",
+    "Tracker": "AntennaTracker",
+}
+
+
+def build_target(vehicle: str) -> str:
+    """Canonical build vehicle for a submitted test vehicle; `.lower()` of the
+    result is the waf build command. Suite/alias vehicles resolve to the plain
+    vehicle so they share its cached build; everything else passes through."""
+    return _VEHICLE_BUILD_TARGETS.get(vehicle, vehicle)
+
+
 def build_cache_key(commit: str, vehicle: str,
                     waf_configure_args: list[str],
                     waf_build_args: list[str]) -> str:
-    """Deterministic cache key for a build configuration."""
+    """Deterministic cache key for a build configuration. Keyed on the
+    canonical build target so e.g. QuadPlane shares Plane's cached build."""
     import hashlib
-    raw = f"{commit}:{vehicle}:{sorted(waf_configure_args)}:{sorted(waf_build_args)}"
+    raw = f"{commit}:{build_target(vehicle)}:{sorted(waf_configure_args)}:{sorted(waf_build_args)}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -675,7 +711,8 @@ async def get_or_create_build_template(
         await loop.run_in_executor(None, shutil.rmtree, evict_path, True)
 
     # Copy source template to build template dir
-    bld_path = BUILD_TEMPLATES_DIR / f"bld-{key}-{vehicle.lower()}"
+    target = build_target(vehicle).lower()
+    bld_path = BUILD_TEMPLATES_DIR / f"bld-{key}-{target}"
     if bld_path.exists():
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, shutil.rmtree, bld_path, True)
@@ -706,7 +743,7 @@ async def get_or_create_build_template(
 
     # Build
     cpu_count = os.cpu_count() or 4
-    build_cmd = ["python3", "./waf", vehicle.lower(), f"-j{cpu_count}"]
+    build_cmd = ["python3", "./waf", target, f"-j{cpu_count}"]
     build_cmd.extend(waf_build_args)
     if log_cb:
         log_cb(f"=== Build: {' '.join(build_cmd)} ===\n")
