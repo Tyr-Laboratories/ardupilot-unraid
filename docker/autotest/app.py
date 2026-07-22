@@ -267,13 +267,28 @@ class AddRemoteRequest(BaseModel):
 
 # --- Helpers ---
 
+def _worker_cpu_affinity():
+    """RT-98 (founder, 2026-07-22): keep CPU 0 free of build/SITL work so
+    the API and web UI stay responsive while tests pin the box (observed:
+    load 356, dashboard unreachable). Applied as preexec_fn on build and
+    test subprocesses; children inherit the mask."""
+    try:
+        cpus = sorted(os.sched_getaffinity(0))
+        if len(cpus) > 1:
+            os.sched_setaffinity(0, set(cpus[1:]))
+    except (AttributeError, OSError):
+        pass
+
+
 async def run_cmd(cmd: list[str], cwd: str | Path | None = None,
-                  timeout: int = 300, log_cb=None) -> tuple[int, str]:
+                  timeout: int = 300, log_cb=None,
+                  preexec_fn=None) -> tuple[int, str]:
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.STDOUT,
         cwd=cwd,
+        preexec_fn=preexec_fn,
     )
     try:
         if log_cb:
@@ -742,14 +757,15 @@ async def get_or_create_build_template(
         raise RuntimeError(f"Build configure failed: {err_msg}")
 
     # Build
-    cpu_count = os.cpu_count() or 4
+    # RT-98: leave one core for the API/web (affinity + one fewer job)
+    cpu_count = max(1, (os.cpu_count() or 4) - 1)
     build_cmd = ["python3", "./waf", target, f"-j{cpu_count}"]
     build_cmd.extend(waf_build_args)
     if log_cb:
         log_cb(f"=== Build: {' '.join(build_cmd)} ===\n")
 
     rc, out = await run_cmd(build_cmd, cwd=bld_path, timeout=600,
-                            log_cb=log_cb)
+                            log_cb=log_cb, preexec_fn=_worker_cpu_affinity)
     if rc != 0:
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, shutil.rmtree, bld_path, True)
@@ -1114,6 +1130,7 @@ async def run_test_async(test_id: str, vehicle: str, test_target: str,
                 stderr=asyncio.subprocess.STDOUT,
                 cwd=wt_path,
                 env=run_env,
+                preexec_fn=_worker_cpu_affinity,
             )
             test_info["process"] = proc
 
