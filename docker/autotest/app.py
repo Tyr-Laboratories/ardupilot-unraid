@@ -1254,13 +1254,35 @@ async def list_test_vehicles():
     return {"vehicles": sorted(vehicles)}
 
 
+# autotest.py's --list-subtests-for-vehicle strips suite suffixes from the
+# vehicle name ("PlaneTests1a" -> "Plane") and lists the plain vehicle's whole
+# test universe — wrong for suite partitions. Enumerate the exact suite class
+# from tester_class_map instead (same class + tests() walk the CLI path uses).
+_LIST_SUBTESTS_SNIPPET = """\
+import sys
+sys.path.insert(0, "Tools/autotest")
+import autotest
+from vehicle_test_suite import Test
+key = "test.%s" % sys.argv[1]
+cls = autotest.tester_class_map.get(key)
+if cls is None:
+    sys.stderr.write("unknown test suite: %s\\n" % key)
+    sys.exit(2)
+names = []
+for subtest in cls("/bin/true", None).tests():
+    if not isinstance(subtest, Test):
+        subtest = Test(subtest)
+    names.append(subtest.name)
+print(" ".join(sorted(names)))
+"""
+
+
 async def _get_subtests(vehicle: str) -> list[str]:
     """Get subtest names for a vehicle. Returns empty list on failure."""
     if not (ARDUPILOT_DIR / "waf").exists():
         return []
     rc, out = await run_cmd(
-        ["python3", "Tools/autotest/autotest.py",
-         f"--list-subtests-for-vehicle={vehicle}"],
+        ["python3", "-c", _LIST_SUBTESTS_SNIPPET, vehicle],
         cwd=ARDUPILOT_DIR, timeout=30,
     )
     if rc != 0:
@@ -1272,6 +1294,12 @@ async def _get_subtests(vehicle: str) -> list[str]:
 async def list_subtests(vehicle: str = "Plane"):
     """List available subtests for a vehicle."""
     names = await _get_subtests(vehicle)
+    if not names:
+        return {
+            "subtests": [],
+            "error": f"could not enumerate subtests for vehicle '{vehicle}'"
+                     " (unknown vehicle/suite or repo not ready)",
+        }
     return {"subtests": [{"name": n} for n in sorted(names)]}
 
 
