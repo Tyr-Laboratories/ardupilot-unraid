@@ -893,13 +893,27 @@ async def run_test_async(test_id: str, vehicle: str, test_target: str,
         await ensure_repo(log_cb=source_log)
 
         # Phase 1: Resolve commit — local checks are lock-free, only fetch serializes
-        found, resolved = await commit_is_local(ref, remote)
+        async def source_is_local() -> tuple[bool, str | None]:
+            """Ref is usable locally. With a pinned commit the commit itself
+            must be present too — a stale remote-tracking ref can resolve to
+            an old tip while the pinned commit is still unfetched."""
+            found, resolved = await commit_is_local(ref, remote)
+            if found and pinned_commit:
+                pin_found, _ = await commit_is_local(pinned_commit, remote)
+                if not pin_found:
+                    return False, resolved
+            return found, resolved
+
+        found, resolved = await source_is_local()
         if not found or not resolved:
             async with _fetch_lock:
                 # Re-check after acquiring lock (another test may have fetched)
-                found, resolved = await commit_is_local(ref, remote)
+                found, resolved = await source_is_local()
                 if not found or not resolved:
-                    test_info["log"] += f"Ref not local, fetching {remote}...\n"
+                    if pinned_commit:
+                        test_info["log"] += f"Ref or pinned commit not local, fetching {remote}...\n"
+                    else:
+                        test_info["log"] += f"Ref not local, fetching {remote}...\n"
                     await flush_log(test_info)
                     fetch_out = await fetch_remote(remote, ref=ref)
                     test_info["log"] += fetch_out + "\n"
