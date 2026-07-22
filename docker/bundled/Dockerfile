@@ -12,7 +12,8 @@ USER root
 RUN groupadd -g 999 ardupilot && \
     useradd -u 999 -g 999 -m ardupilot --shell /bin/bash
 
-# Install system dependencies (redis, supervisor, process tools, SITL X11 deps)
+# Install system dependencies (redis, supervisor, process tools, SITL X11 deps,
+# openssh-client so git can fetch ssh:// remotes)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-dev \
     python3-pip \
@@ -24,6 +25,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gosu \
     sudo \
     curl \
+    openssh-client \
     debian-keyring \
     debian-archive-keyring \
     apt-transport-https \
