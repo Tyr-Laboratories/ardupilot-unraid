@@ -60,9 +60,26 @@ _build_key_locks: dict[str, asyncio.Lock] = {}
 # ephemeral port (SITL acks to the from-address), so slot*10 stride is
 # collision-free up to the 255 -I cap.
 MAX_SITL_INSTANCES = int(os.environ.get("MAX_SITL_INSTANCES", "16"))
+# RT-119 (founder-approved server fix, 2026-07-24): slots whose
+# 10-strided port families land on ports bound by this container's own
+# services are EXCLUDED from the pool. Observed on every mass batch: a
+# few tests boot-die with 'bind failed on port 8000 - Address already
+# in use' — slot 224's SERIAL0 is 5760 + 10*224 = 8000, the API port.
+# TCP listeners in this netns: 8000 (api proxy), 8080/8090/8091
+# (uvicorns), 6379 (redis — offset +9 of slot 61's block, NOT a bound
+# SITL offset, so 61 stays usable), 2019 (below every family).
+# Poisoned slots:
+#   SERIAL0 family 5760+10i:            i=224 (:8000), 232 (:8080),
+#                                       233 (:8090/:8091)
+#   spare_network_port family 8000+10i: i=0 (:8000), 8 (:8080),
+#                                       9 (:8090/:8091)
+BANNED_SITL_SLOTS = frozenset({0, 8, 9, 224, 232, 233})
+SITL_POOL_SIZE = sum(1 for _i in range(MAX_SITL_INSTANCES)
+                     if _i not in BANNED_SITL_SLOTS)
 sitl_instance_pool = asyncio.Queue()
 for _i in range(MAX_SITL_INSTANCES):
-    sitl_instance_pool.put_nowait(_i)
+    if _i not in BANNED_SITL_SLOTS:
+        sitl_instance_pool.put_nowait(_i)
 
 tests: dict[str, dict] = {}
 
@@ -1022,7 +1039,7 @@ async def run_test_async(test_id: str, vehicle: str, test_target: str,
 
         # Grab a SITL instance slot (each uses unique ports: base + instance*10)
         _set_state(test_info, "QUEUED")
-        test_info["log"] += f"\n=== Waiting for SITL instance ({sitl_instance_pool.qsize()}/{MAX_SITL_INSTANCES} free) ===\n"
+        test_info["log"] += f"\n=== Waiting for SITL instance ({sitl_instance_pool.qsize()}/{SITL_POOL_SIZE} free) ===\n"
         await flush_log(test_info)
 
         instance_num = await sitl_instance_pool.get()
