@@ -87,7 +87,7 @@ All pages include a live system metrics ticker in the navbar showing CPU%, memor
 
 | Repository | Description |
 |------------|-------------|
-| [jack7169/ardupilot-unraid](https://github.com/jack7169/ardupilot-unraid) | This repo — server infrastructure and deployment |
+| [Tyr-Laboratories/ardupilot-unraid](https://github.com/Tyr-Laboratories/ardupilot-unraid) | This repo — server infrastructure and deployment |
 | [jack7169/ardupilot-jack](https://github.com/jack7169/ardupilot-jack) | Custom ArduPilot fork with ExtPos/EKF3 branches |
 | [ArduPilot/CustomBuild](https://github.com/ArduPilot/CustomBuild) | Upstream custom firmware builder framework |
 | [ArduPilot/ardupilot](https://github.com/ArduPilot/ardupilot) | Upstream ArduPilot firmware |
@@ -482,7 +482,7 @@ The bundled deployment runs all services in a single container managed by superv
 # 1. Clone this repo with submodules
 ssh root@carthagenas.local
 cd /mnt/user/appdata/ardupilot
-git clone git@github.com:jack7169/ardupilot-unraid.git servers-repo
+git clone git@github.com:Tyr-Laboratories/ardupilot-unraid.git servers-repo
 cd servers-repo
 git submodule update --init custombuild
 
