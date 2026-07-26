@@ -34,6 +34,10 @@ services:
       - shared-ardupilot:/data/shared-ardupilot:rw
       # Log-heavy volumes: bind mount to array (large storage, metadata-light)
       - ardupilot-buildlogs:/data/buildlogs:rw
+      # Deploy key for private git remotes. Bind-mounted from the array so it
+      # survives container recreation; /data is an anonymous volume, so a key
+      # written there is lost the moment the container is replaced.
+      - ${SECRETS_DIR:-/mnt/user/appdata/ardupilot/secrets}/ssh:/data/ssh:ro
 
   # --- Tailscale: separate tailnet access (optional sidecar) ---
   # First run: docker exec ardupilot-tailscale tailscale up
