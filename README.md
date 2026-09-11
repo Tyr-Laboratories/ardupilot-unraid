@@ -88,11 +88,22 @@ All pages include a live system metrics ticker in the navbar showing CPU%, memor
 | Repository | Description |
 |------------|-------------|
 | [Tyr-Laboratories/ardupilot-unraid](https://github.com/Tyr-Laboratories/ardupilot-unraid) | This repo — server infrastructure and deployment |
-| [jack7169/ardupilot-jack](https://github.com/jack7169/ardupilot-jack) | Custom ArduPilot fork with ExtPos/EKF3 branches |
+| [jack7169/ardupilot-jack](https://github.com/jack7169/ardupilot-jack) | Personal ArduPilot fork retained by the existing `ardupilot-jack` submodule |
+| [Tyr-Laboratories/ardupilot-starnav-extpos](https://github.com/Tyr-Laboratories/ardupilot-starnav-extpos) | Current TL-Starnav firmware program repository; reconcile the selected server remote, ref and exact commit for its build/test handoff |
+| [Tyr-Laboratories/CustomBuild](https://github.com/Tyr-Laboratories/CustomBuild) | Custom firmware builder framework consumed by this repository's `custombuild` submodule |
 | [ArduPilot/CustomBuild](https://github.com/ArduPilot/CustomBuild) | Upstream custom firmware builder framework |
 | [ArduPilot/ardupilot](https://github.com/ArduPilot/ardupilot) | Upstream ArduPilot firmware |
 
 Both `ardupilot-jack` and `custombuild` are included as git submodules.
+
+For TL-Starnav firmware work, the
+[ArduPilot program owner](https://github.com/Tyr-Laboratories/Tyr-Laboratories-Starnav/blob/dev/docs-tina/content/private/ardupilot-starnav-extpos.mdx)
+owns the accepted fleet pin, reviewed parameter pack and qualification/flash
+boundary. Before a build or test submission, reconcile the build server's
+repository, remote URL, selected ref and exact commit with the authorized handoff.
+The local checkout does not set those server inputs. The personal-fork examples
+below remain examples for that existing remote; they do not select the current
+TL-Starnav firmware or authorize a fleet-pin advance.
 
 ## CLI Tool (`ap-build`)
 
