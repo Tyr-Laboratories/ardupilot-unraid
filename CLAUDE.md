@@ -59,6 +59,15 @@ The `--remote` and `--ref` flags tell the server which git remote and branch/tag
 
 If a branch only exists on `jack7169`, you MUST use `--remote jack7169`. Using `--remote origin` will fail with "couldn't find remote ref".
 
+For current TL-Starnav firmware, use
+[`Tyr-Laboratories/ardupilot-starnav-extpos`](https://github.com/Tyr-Laboratories/ardupilot-starnav-extpos).
+Before submission, read the server's remote URL, selected ref and exact commit
+and reconcile them with the authorized handoff. Use `--commit` to pin that commit.
+The `jack7169` examples describe the existing personal-fork remote and retained
+submodule; they do not select the current TL-Starnav source. The
+[program owner linked in the README](README.md#source-repositories) retains the
+fleet pin, parameter-pack and qualification/flash boundary.
+
 ## Git Remote Management (Server)
 
 The server starts with only `origin` (upstream ArduPilot). To test branches from forks, you must add the fork as a remote:
@@ -84,8 +93,9 @@ When Docker volumes are wiped (server restore, rebuild, etc.), the server starts
 
 Standard post-restore checklist:
 1. Wait for container startup: `curl http://100.99.196.120:8000/autotest/api/status` until `repo_exists: true`
-2. Re-add fork remotes: `ap-build git add-remote jack7169 https://github.com/jack7169/ardupilot-jack.git`
-3. Submit a smoke test: `ap-build test submit Plane test.Plane.ThrottleFailsafe`
+2. Read server remotes with `ap-build git remotes`. For a TL-Starnav handoff, restore its remote if absent: `ap-build git add-remote starnav https://github.com/Tyr-Laboratories/ardupilot-starnav-extpos.git`. The name `starnav` is an example; use the verified server remote name.
+3. Confirm that remote's URL, selected ref and exact commit against the authorized handoff before submitting. Retain `jack7169` when needed for its existing personal-fork builds.
+4. Submit the smoke test with explicit source selection: `ap-build test submit Plane test.Plane.ThrottleFailsafe --remote <verified-server-remote> --ref <authorized-ref> --commit <authorized-full-sha>`.
 
 ## Server Access
 
